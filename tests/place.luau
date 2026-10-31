@@ -5,13 +5,32 @@ local luau = require("@lune/luau")
 
 local scripts = {
     {Path = {"ReplicatedStorage", "GameConfig"}, Class = "ModuleScript", Source = "src/ReplicatedStorage/GameConfig.lua"},
+    {Path = {"ReplicatedStorage", "GameWorld"}, Class = "ModuleScript", Source = "src/ReplicatedStorage/GameWorld.lua"},
     {Path = {"ServerScriptService", "GameServer"}, Class = "Script", Source = "src/ServerScriptService/GameServer.server.lua"},
+    {Path = {"ServerScriptService", "ProfileStore"}, Class = "ModuleScript", Source = "src/ServerScriptService/ProfileStore.lua"},
     {Path = {"StarterPlayer", "StarterPlayerScripts", "GameClient"}, Class = "LocalScript", Source = "src/StarterPlayer/StarterPlayerScripts/GameClient.client.lua"},
 }
 
 local function verify(place)
     assert(place.ClassName == "DataModel", "O arquivo deve conter um lugar, não um modelo.")
-    assert(place:FindFirstChildOfClass("Workspace"), "Workspace ausente")
+    local workspace = assert(place:FindFirstChildOfClass("Workspace"), "Workspace ausente")
+    assert(workspace.CurrentCamera == workspace.Camera, "Câmera inicial deve apontar para a primeira ilha")
+    assert((workspace.Camera.Focus.Position - roblox.Vector3.new(0, 4, 0)).Magnitude < 0.1)
+    local map = assert(workspace:FindFirstChild("LendasWorld"), "Mapa deve estar presente antes de executar scripts")
+    assert(#map.Ilhas:GetChildren() == 3, "As três ilhas devem estar no arquivo")
+    assert(#map.Inimigos:GetChildren() == 15, "Os inimigos devem estar no arquivo")
+    assert(#map.GaleriaDeLutadores:GetChildren() == 5, "Os cinco modelos de lutadores devem estar no arquivo")
+    for _, folder in {map.Inimigos, map.GaleriaDeLutadores} do
+        for _, fighter in folder:GetChildren() do
+            for _, limb in {"Body", "Head", "LeftArm", "RightArm", "LeftLeg", "RightLeg"} do
+                assert(fighter:FindFirstChild(limb), "Modelo incompleto: " .. fighter.Name .. "." .. limb)
+            end
+            assert(fighter.PrimaryPart == fighter.Body)
+        end
+    end
+    assert(map.Inicio:IsA("SpawnLocation") and map.Inicio.Neutral, "Ponto de entrada ausente")
+    local ground = map.Ilhas["Vila da Aurora"].Terreno
+    assert(map.Inicio.CFrame.Position.Y > ground.CFrame.Position.Y + ground.Size.Y / 2)
     local count = 0
     for _, descendant in place:GetDescendants() do
         if descendant:IsA("LuaSourceContainer") then count += 1 end
@@ -40,5 +59,5 @@ for _, extension in {"rbxl", "rbxlx"} do
     verify(place)
     -- Check a full Roblox binary serialization round trip, not just generic XML parsing.
     verify(roblox.deserializePlace(roblox.serializePlace(place)))
-    print("PASS: " .. path .. " · leitura Roblox, serviços, scripts, compilação e regravação.")
+    print("PASS: " .. path .. " · mapa incorporado, câmera, 15 inimigos, cinco lutadores, scripts e regravação.")
 end

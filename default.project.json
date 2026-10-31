@@ -2,9 +2,20 @@
   "name": "Lendas do Anime",
   "tree": {
     "$className": "DataModel",
-    "Workspace": { "$className": "Workspace" },
-    "ReplicatedStorage": { "GameConfig": { "$path": "src/ReplicatedStorage/GameConfig.lua" } },
-    "ServerScriptService": { "GameServer": { "$path": "src/ServerScriptService/GameServer.server.lua" } },
+    "Workspace": {
+      "$className": "Workspace",
+      "LendasWorld": { "$path": "assets/LendasWorld.rbxm" },
+      "Camera": { "$path": "assets/Camera.rbxm" }
+    },
+    "Lighting": { "$className": "Lighting", "$properties": { "ClockTime": 14, "Brightness": 2 } },
+    "ReplicatedStorage": {
+      "GameConfig": { "$path": "src/ReplicatedStorage/GameConfig.lua" },
+      "GameWorld": { "$path": "src/ReplicatedStorage/GameWorld.lua" }
+    },
+    "ServerScriptService": {
+      "GameServer": { "$path": "src/ServerScriptService/GameServer.server.lua" },
+      "ProfileStore": { "$path": "src/ServerScriptService/ProfileStore.lua" }
+    },
     "StarterPlayer": { "StarterPlayerScripts": { "GameClient": { "$path": "src/StarterPlayer/StarterPlayerScripts/GameClient.client.lua" } } }
   }
 }

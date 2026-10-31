@@ -4,42 +4,19 @@ local DataStoreService = game:GetService("DataStoreService")
 local HttpService = game:GetService("HttpService")
 local RunService = game:GetService("RunService")
 local Config = require(ReplicatedStorage:WaitForChild("GameConfig"))
+local World = require(ReplicatedStorage:WaitForChild("GameWorld"))
+local ProfileStore = require(script.Parent:WaitForChild("ProfileStore"))
 local remote = Instance.new("RemoteEvent")
 remote.Name = "GameEvent"
 remote.Parent = ReplicatedStorage
-local store = DataStoreService:GetDataStore("LendasDoAnime_v1")
 local profiles, targets, cooldowns, enemies, pets = {}, {}, {}, {}, {}
 local random = Random.new()
-local map = Instance.new("Folder")
-map.Name = "LendasWorld"
+local map = workspace:FindFirstChild("LendasWorld") or World.Build(Config)
 map.Parent = workspace
 workspace.FallenPartsDestroyHeight = -100
 game:GetService("Lighting").ClockTime = 14
 game:GetService("Lighting").Brightness = 2
 
-local function part(name, size, position, color, parent)
-    local p = Instance.new("Part")
-    p.Name, p.Size, p.Position, p.Color = name, size, position, color
-    p.Anchored, p.TopSurface, p.BottomSurface = true, Enum.SurfaceType.Smooth, Enum.SurfaceType.Smooth
-    p.Parent = parent or map
-    return p
-end
-local function label(adornee, text, color, offset)
-    local gui = Instance.new("BillboardGui")
-    gui.Size, gui.StudsOffset, gui.AlwaysOnTop = UDim2.fromOffset(240, 60), Vector3.new(0, offset or 5, 0), true
-    gui.Parent = adornee
-    local t = Instance.new("TextLabel")
-    t.Size, t.BackgroundTransparency, t.Text = UDim2.fromScale(1, 1), 1, text
-    t.TextColor3, t.TextStrokeTransparency, t.TextScaled = color or Color3.new(1, 1, 1), 0.4, true
-    t.Font, t.Parent = Enum.Font.GothamBold, gui
-    return t
-end
-local function prompt(parent, action, object, callback)
-    local p = Instance.new("ProximityPrompt")
-    p.ActionText, p.ObjectText, p.HoldDuration = action, object, 0.25
-    p.MaxActivationDistance, p.RequiresLineOfSight, p.Parent = 14, false, parent
-    p.Triggered:Connect(callback)
-end
 local function send(player)
     local profile = profiles[player]
     if profile then remote:FireClient(player, "State", profile) end
@@ -71,13 +48,10 @@ local function rebuildPets(player)
     for _, f in ipairs(profiles[player].Inventory) do
         if equipped(profiles[player], f.Uid) then
             local definition = Config.GetFighter(f.Kind)
-            local model = Instance.new("Model")
-            model.Name, model.Parent = f.Uid, folder
-            local body = part("Body", Vector3.new(1.6, 2, 1), spawnPosition(1), definition.Color, model)
-            local head = part("Head", Vector3.new(1.2, 1.2, 1.2), body.Position + Vector3.new(0, 1.6, 0), Color3.fromRGB(255, 217, 183), model)
-            body.CanCollide, head.CanCollide = false, false
-            model.PrimaryPart = body
-            label(head, definition.Name .. " · Nv. " .. f.Level, definition.Color, 2.5)
+            local r = root(player)
+            local position = r and r.CFrame.Position or spawnPosition(profiles[player].World)
+            local model = World.CreateFighter(folder, definition, f.Uid, position, 0.8)
+            model.Head.Nameplate.Caption.Text = definition.Name .. " · Nv. " .. f.Level
         end
     end
 end
@@ -85,7 +59,7 @@ local function summon(player)
     local p, r = profiles[player], root(player)
     if not p or not r then return end
     local altar = Vector3.new((p.World - 1) * 650 - 30, 4, 20)
-    if (r.Position - altar).Magnitude > 22 then toast(player, "Aproxime-se da Estrela de Invocação!"); return end
+    if (r.CFrame.Position - altar).Magnitude > 22 then toast(player, "Aproxime-se da Estrela de Invocação!"); return end
     local cost = Config.Worlds[p.World].SummonCost
     if p.Coins < cost then toast(player, "Moedas insuficientes!"); return end
     if #p.Inventory >= Config.MaxInventory then toast(player, "Inventário cheio! Venda lutadores para liberar espaço."); return end
@@ -115,63 +89,50 @@ local function travel(player, world)
     send(player)
 end
 
-for index, world in ipairs(Config.Worlds) do
-    local x = (index - 1) * 650
-    part(world.Name, Vector3.new(190, 4, 190), Vector3.new(x, 0, 0), world.Color)
-    part("Caminho", Vector3.new(20, 0.2, 155), Vector3.new(x, 2.1, 0), Color3.fromRGB(225, 215, 194))
-    local sign = part("Placa", Vector3.new(1, 1, 1), Vector3.new(x, 10, 75), world.Color)
-    sign.Transparency, sign.CanCollide = 1, false
-    label(sign, world.Name, Color3.new(1, 1, 1), 0)
-    local altar = part("Estrela", Vector3.new(5, 5, 5), Vector3.new(x - 30, 5, 20), Color3.fromRGB(255, 215, 80))
-    altar.Material, altar.Shape = Enum.Material.Neon, Enum.PartType.Ball
-    label(altar, "INVOCAÇÃO\n" .. world.SummonCost .. " moedas", Color3.fromRGB(255, 232, 130))
-    prompt(altar, "Invocar", "Estrela · " .. world.SummonCost .. " moedas", summon)
-    if index < #Config.Worlds then
-        local portal = part("Portal", Vector3.new(12, 14, 2), Vector3.new(x, 9, -80), Config.Worlds[index + 1].Color)
-        portal.Material, portal.CanCollide = Enum.Material.Neon, false
-        label(portal, Config.Worlds[index + 1].Name .. "\n" .. Config.Worlds[index + 1].Cost .. " moedas", nil, 10)
-        prompt(portal, "Viajar / desbloquear", Config.Worlds[index + 1].Name, function(player) travel(player, index + 1) end)
-    end
-    for n = 1, 12 do
-        local angle = n * math.pi / 6
-        local pos = Vector3.new(x + math.cos(angle) * 78, 8, math.sin(angle) * 78)
-        part("Tronco", Vector3.new(3, 12, 3), pos, Color3.fromRGB(101, 74, 62))
-        local canopy = part("Copa", Vector3.new(15, 15, 15), pos + Vector3.new(0, 10, 0), world.Color:Lerp(Color3.fromRGB(30, 90, 75), 0.4))
-        canopy.Shape = Enum.PartType.Ball
-    end
-    for n = 1, 5 do
-        local boss = n == 5
-        local pos = Vector3.new(x + ((n - 1) % 3 - 1) * 28, 6, -12 - math.floor((n - 1) / 3) * 32)
-        local model = Instance.new("Model")
-        model.Name, model.Parent = boss and "Chefe " .. world.Enemy or world.Enemy, map
-        local body = part("Body", boss and Vector3.new(6, 7, 4) or Vector3.new(3, 4, 2), pos, boss and Color3.fromRGB(166, 64, 104) or Color3.fromRGB(65, 64, 90), model)
-        local head = part("Head", Vector3.new(2.5, 2.5, 2.5), pos + Vector3.new(0, boss and 5 or 3, 0), Color3.fromRGB(200, 177, 190), model)
-        model.PrimaryPart = body
-        local health = world.Health * (boss and 8 or 1)
-        local entry = {Model = model, Body = body, Head = head, World = index, Health = health, MaxHealth = health, Reward = world.Reward * (boss and 6 or 1), Dead = false}
-        entry.Label = label(head, model.Name .. "\n" .. health .. " / " .. health, nil, 4)
-        enemies[model] = entry
-        local click = Instance.new("ClickDetector")
-        click.MaxActivationDistance, click.Parent = Config.AttackRange, body
-        click.MouseClick:Connect(function(player)
-            local p, r = profiles[player], root(player)
-            if p and r and p.World == index and not entry.Dead and (r.Position - body.Position).Magnitude <= Config.AttackRange then
-                targets[player] = entry
-                remote:FireClient(player, "Target", model)
-            end
-        end)
-        prompt(body, "Atacar", model.Name, function(player)
-            local p, r = profiles[player], root(player)
-            if p and r and p.World == index and not entry.Dead and (r.Position - body.Position).Magnitude <= 22 then
-                targets[player] = entry
-                remote:FireClient(player, "Target", model)
-            end
-        end)
+-- The map, prompts and opponents are already present in the downloaded place.
+-- Only bind gameplay here; never create a second copy on top of the baked world.
+for _, object in ipairs(map:GetDescendants()) do
+    if object:IsA("BasePart") then
+        local summonWorld = object:GetAttribute("SummonWorld")
+        local destination = object:GetAttribute("Destination")
+        if summonWorld then
+            object.ProximityPrompt.Triggered:Connect(function(player)
+                if profiles[player] and profiles[player].World == summonWorld then summon(player) end
+            end)
+        elseif destination then
+            object.ProximityPrompt.Triggered:Connect(function(player)
+                local p, r = profiles[player], root(player)
+                if p and r and p.World == destination - 1 and (r.CFrame.Position - object.CFrame.Position).Magnitude <= 22 then
+                    travel(player, destination)
+                end
+            end)
+        end
     end
 end
-local spawn = Instance.new("SpawnLocation")
-spawn.Size, spawn.Position, spawn.Anchored, spawn.Neutral = Vector3.new(10, 1, 10), spawnPosition(1) - Vector3.new(0, 3, 0), true, true
-spawn.Color, spawn.Parent = Color3.fromRGB(240, 240, 255), map
+for _, model in ipairs(map.Inimigos:GetChildren()) do
+    local index = model:GetAttribute("WorldIndex")
+    local world = Config.Worlds[index]
+    local boss = model:GetAttribute("Boss")
+    local health = world.Health * (boss and 8 or 1)
+    local body, head = model.Body, model.Head
+    local entry = {Model = model, Name = model:GetAttribute("EnemyName"), Body = body, Head = head, World = index, Health = health, MaxHealth = health, Reward = world.Reward * (boss and 6 or 1), Dead = false, Label = head.Nameplate.Caption}
+    enemies[model] = entry
+    local function selectTarget(player)
+        local p, r = profiles[player], root(player)
+        if p and r and p.World == index and not entry.Dead and (r.CFrame.Position - body.CFrame.Position).Magnitude <= Config.AttackRange then
+            targets[player] = entry
+            remote:FireClient(player, "Target", model)
+        end
+    end
+    body.ClickDetector.MouseClick:Connect(selectTarget)
+    body.ProximityPrompt.Triggered:Connect(function(player)
+        local r = root(player)
+        if r and (r.CFrame.Position - body.CFrame.Position).Magnitude <= 22 then selectTarget(player) end
+    end)
+end
+
+local persistence = ProfileStore.new(DataStoreService, RunService:IsStudio(), game.PlaceId)
+local initializing = {}
 local function validProfile(p)
     if type(p) ~= "table" or type(p.Inventory) ~= "table" or #p.Inventory > Config.MaxInventory or type(p.Equipped) ~= "table" then return false end
     for _, key in ipairs({"Coins", "World", "Unlocked", "Kills", "QuestClaimed"}) do
@@ -193,18 +154,20 @@ end
 local function save(player)
     local p = profiles[player]
     if not p then return end
-    local ok, err = pcall(function() store:SetAsync("Player_" .. player.UserId, p) end)
+    local ok, err = persistence:Save(player.UserId, p, player:GetAttribute("SessionOnly"))
     if not ok then warn("Falha ao salvar jogador " .. player.UserId .. ": " .. tostring(err)) end
 end
-Players.PlayerAdded:Connect(function(player)
-    local ok, data = pcall(function() return store:GetAsync("Player_" .. player.UserId) end)
+local function initializePlayer(player)
+    if initializing[player] or profiles[player] then return end
+    initializing[player] = true
+    local ok, data, sessionOnly = persistence:Load(player.UserId)
+    initializing[player] = nil
     if not ok then
-        if RunService:IsStudio() then
-            data = nil
-            player:SetAttribute("SessionOnly", true)
-            warn("DataStore indisponível no Studio; progresso somente nesta sessão.")
-        else player:Kick("Não foi possível carregar seu progresso. Tente entrar novamente."); return end
+        player:Kick("Não foi possível carregar seu progresso. Tente entrar novamente.")
+        return
     end
+    player:SetAttribute("SessionOnly", sessionOnly)
+    if sessionOnly then warn("Modo Studio: progresso temporário; o mapa e os lutadores continuam disponíveis.") end
     if ok and data ~= nil and not validProfile(data) then player:Kick("Seu progresso precisa de revisão. Contate o desenvolvedor."); return end
     if not player.Parent then return end
     profiles[player] = data or newProfile()
@@ -216,7 +179,9 @@ Players.PlayerAdded:Connect(function(player)
     player.CharacterAdded:Connect(characterAdded)
     if player.Character then task.spawn(characterAdded, player.Character) end
     send(player)
-end)
+end
+Players.PlayerAdded:Connect(initializePlayer)
+for _, player in ipairs(Players:GetPlayers()) do task.spawn(initializePlayer, player) end
 remote.OnServerEvent:Connect(function(player, action, value)
     local p = profiles[player]
     if not p or type(action) ~= "string" then return end
@@ -263,7 +228,7 @@ RunService.Heartbeat:Connect(function(dt)
     if attack then attackClock = 0 end
     for player, p in pairs(profiles) do
         local r, enemy = root(player), targets[player]
-        if enemy and (enemy.Dead or not r or p.World ~= enemy.World or (r.Position - enemy.Body.Position).Magnitude > Config.AttackRange) then
+        if enemy and (enemy.Dead or not r or p.World ~= enemy.World or (r.CFrame.Position - enemy.Body.CFrame.Position).Magnitude > Config.AttackRange) then
             targets[player], enemy = nil, nil
             remote:FireClient(player, "Target", nil)
         end
@@ -273,9 +238,9 @@ RunService.Heartbeat:Connect(function(dt)
                 local pos
                 if enemy then
                     local angle = i * math.pi * 2 / math.max(1, #p.Equipped)
-                    pos = enemy.Body.Position + Vector3.new(math.cos(angle) * 6, 0, math.sin(angle) * 6)
+                    pos = enemy.Body.CFrame.Position + Vector3.new(math.cos(angle) * 6, 0, math.sin(angle) * 6)
                 else pos = (r.CFrame * CFrame.new((i - 2) * 4, -1, 6)).Position end
-                local destination = CFrame.lookAt(pos, enemy and enemy.Body.Position or pos + r.CFrame.LookVector)
+                local destination = CFrame.lookAt(pos, enemy and enemy.Body.CFrame.Position or pos + r.CFrame.LookVector)
                 model:PivotTo(model:GetPivot():Lerp(destination, math.min(dt * 8, 1)))
             end
         end
@@ -283,8 +248,8 @@ RunService.Heartbeat:Connect(function(dt)
             local damage = 0
             for _, f in ipairs(p.Inventory) do if equipped(p, f.Uid) then damage = damage + Config.Power(f) end end
             enemy.Health = math.max(0, enemy.Health - damage)
-            enemy.Label.Text = enemy.Model.Name .. "\n" .. enemy.Health .. " / " .. enemy.MaxHealth
-            if damage > 0 then remote:FireClient(player, "Damage", enemy.Body.Position, damage) end
+            enemy.Label.Text = enemy.Name .. "\n" .. enemy.Health .. " / " .. enemy.MaxHealth
+            if damage > 0 then remote:FireClient(player, "Damage", enemy.Body.CFrame.Position, damage) end
             if enemy.Health <= 0 and not enemy.Dead then
                 enemy.Dead, targets[player] = true, nil
                 p.Coins, p.Kills = p.Coins + enemy.Reward, p.Kills + 1
@@ -294,15 +259,21 @@ RunService.Heartbeat:Connect(function(dt)
                         if f.XP >= f.Level * 5 then f.XP, f.Level = 0, f.Level + 1 end
                     end
                 end
-                for _, child in ipairs(enemy.Model:GetChildren()) do if child:IsA("BasePart") then child.Transparency, child.CanCollide = 1, false end end
+                for _, child in ipairs(enemy.Model:GetDescendants()) do
+                    if child:IsA("BasePart") then child.Transparency, child.CanCollide = 1, false end
+                    if child:IsA("ProximityPrompt") then child.Enabled = false end
+                end
                 enemy.Label.Text = "Renascendo..."
                 toast(player, "+" .. enemy.Reward .. " moedas!")
                 rebuildPets(player); send(player)
                 remote:FireClient(player, "Target", nil)
                 task.delay(7, function()
                     enemy.Health, enemy.Dead = enemy.MaxHealth, false
-                    enemy.Label.Text = enemy.Model.Name .. "\n" .. enemy.Health .. " / " .. enemy.MaxHealth
-                    for _, child in ipairs(enemy.Model:GetChildren()) do if child:IsA("BasePart") then child.Transparency, child.CanCollide = 0, true end end
+                    enemy.Label.Text = enemy.Name .. "\n" .. enemy.Health .. " / " .. enemy.MaxHealth
+                    for _, child in ipairs(enemy.Model:GetDescendants()) do
+                        if child:IsA("BasePart") then child.Transparency, child.CanCollide = 0, false end
+                        if child:IsA("ProximityPrompt") then child.Enabled = true end
+                    end
                 end)
             end
         end
@@ -310,7 +281,7 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 Players.PlayerRemoving:Connect(function(player)
     if not player:GetAttribute("SessionOnly") then save(player) end
-    profiles[player], targets[player], cooldowns[player] = nil, nil, nil
+    profiles[player], targets[player], cooldowns[player], initializing[player] = nil, nil, nil, nil
     if pets[player] then pets[player]:Destroy(); pets[player] = nil end
 end)
 task.spawn(function()
