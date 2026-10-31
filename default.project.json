@@ -1,0 +1,10 @@
+{
+  "name": "Lendas do Anime",
+  "tree": {
+    "$className": "DataModel",
+    "Workspace": { "$className": "Workspace" },
+    "ReplicatedStorage": { "GameConfig": { "$path": "src/ReplicatedStorage/GameConfig.lua" } },
+    "ServerScriptService": { "GameServer": { "$path": "src/ServerScriptService/GameServer.server.lua" } },
+    "StarterPlayer": { "StarterPlayerScripts": { "GameClient": { "$path": "src/StarterPlayer/StarterPlayerScripts/GameClient.client.lua" } } }
+  }
+}
